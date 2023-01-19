@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Http\Support\WithLogTrait;
+use App\Http\Controllers\Support\WtLogTrait;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Bus\Queueable;
@@ -11,16 +11,16 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Http;
 
 class SendLeadCrm implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WithLogTrait;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WtLogTrait;
 
     protected bool $debug = true;
     protected string $crmTestUlr = 'https://click-academy-api-81.octohub.it';
     protected string $crmUlr = 'https://crmapi81.appclickacademy.it';
     public array $data;
-    public Client $client;
 
     /**
      * Create a new job instance.
@@ -29,7 +29,6 @@ class SendLeadCrm implements ShouldQueue
      */
     public function __construct(array $data)
     {
-        $this->client = new Client();
         $this->data = $data;
     }
 
@@ -45,54 +44,73 @@ class SendLeadCrm implements ShouldQueue
         return $this->crmUlr . '/' . $url;
     }
 
-    protected function auth()
+    /**
+     * @return object|array|null
+     */
+    protected function auth(): object|array|null
     {
-        $response = $this->client->post($this->getUrl('api/external/v1/oauth/token'), [
-            'headers' => [
-                'User-Agent' => 'middleware3-click-accademy/1.0',
+        try {
+            $response = Http::withHeaders([
+                'User-Agent' => 'middleware3-abtg/1.0',
                 'Accept' => 'application/json',
-            ],
-            'form_params' => [
+            ])->post($this->getUrl('api/external/v1/oauth/token'), [
                 'grant_type' => 'client_credentials',
                 'scope' => '*',
-                'client_id' => 'client_id_supplied_by_click',
-                'client_secret' => 'client_secret_supplied_by_click'
-            ]
-        ]);
-        return $response->getBody();
+                'client_id' => '98433ce6-4d8e-458f-87a9-83a472667196',
+                'client_secret' => 'qVhNlyr0q49zAa5WuzkY28cu3dec7yOnFyowMaN4'
+            ]);
+        } catch (\Exception $e){
+            $this->logDebug('Auth Exception', [
+                'code' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                '' => $e->getTrace()
+            ],'ERROR (EXCEPTION)');
+            return null;
+        }
+        if($response->successful()) {
+            $this->logDebug('Auth Success', [
+                'header' => $response->headers(),
+                'body' => $response->object(),
+                'statusCode' => $response->status(),
+                'reason' => $response->reason(),
+            ],'INFO');
+            return $response->object();
+        }
+
+        $this->logDebug('Auth Fail', [
+                'header' => $response->headers(),
+                'body' => $response->object(),
+                'statusCode' => $response->status(),
+                'reason' => $response->reason()
+            ],'ERROR (FAIL)');
+        return null;
     }
 
     /**
      * Execute the job.
      *
      * @return void
-     * @throws GuzzleException
      */
-    public function handle()
+    public function handle(): void
     {
-        $client = new Client();
-        $url = 'api/external/v1/' . $this->data['provider'] . '/leads';
+        $url = 'api/external/v1/organic/leads';
         $auth = $this->auth();
-
-        $response = $client->post(
-            uri: $this->getUrl($url),
-            options: [
-                'headers' => [
+        if($auth) {
+            $response = Http::withToken($auth->access_token)
+                ->withHeaders([
                     'User-Agent' => 'middleware3-abtg/1.0',
-                    'Authorization' => 'Bearer '. $auth['token'],
                     'Accept' => 'application/json',
-                ],
-                'form_params' => [
-                    'name' => $this->data['name'],
-                    'surname' => $this->data['surname'],
-                    'master' => $this->data['master'],
-                    'phone' => $this->data['phone'],
+                ])->post($this->getUrl($url), [
+                    'name' => $this->data['nome'],
+                    'surname' => $this->data['cognome'],
+                    'master' => $this->data['corso'],
+                    'phone' => $this->data['telefono'],
                     'email' => $this->data['email'],
-                    'region' => $this->data['region'],
+                    'region' => $this->data['regione'],
                     'city' => $this->data['city'],
-                    'province' => $this->data['province'],
-                ]
-            ]
-        );
+                    'province' => $this->data['provincia'],
+                ]);
+        }
     }
 }

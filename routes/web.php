@@ -19,4 +19,4 @@ Route::get('/', function () {
 });
 
 
-Route::get('/lead/add', [LeadController::class, 'addLead']);
+Route::post('lead/add', [LeadController::class, 'addLead']);

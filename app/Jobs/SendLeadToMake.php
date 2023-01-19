@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Http\Support\WithLogTrait;
+use App\Http\Controllers\Support\WtLogTrait;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,9 +13,24 @@ use Illuminate\Support\Facades\Http;
 
 class SendLeadToMake implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WithLogTrait;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WtLogTrait;
 
-    public string $makeUlr = '';
+    public string $makeUlr = 'https://hook.eu1.make.com/7npu1raoyayosku4khn4q532kwgdq7y2?course_id=1098';
+    /*
+    {
+        "nome": "??????",
+        "cognome": "??????",
+        "tipologia": "??????",
+        "regione": "??????",
+        "provincia": "??????",
+        "telefono": "??????",
+        "email": "??????",
+        "corso": "??????",
+        "acceptance-970": "??????",
+        "referer-page": "??????"
+    }
+
+     */
     public array $data;
 
     /**
