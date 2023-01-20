@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Http\Controllers\Support\WtLogTrait;
+use App\Models\Lead;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Bus\Queueable;
@@ -18,18 +19,19 @@ class SendLeadCrm implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, WtLogTrait;
 
     protected bool $debug = true;
+    protected string $url = 'api/external/v1/organic/leads';
     protected string $crmTestUlr = 'https://click-academy-api-81.octohub.it';
     protected string $crmUlr = 'https://crmapi81.appclickacademy.it';
-    public array $data;
+    public Lead $lead;
 
     /**
      * Create a new job instance.
-     *
+     * @param Lead $lead
      * @return void
      */
-    public function __construct(array $data)
+    public function __construct(Lead $lead)
     {
-        $this->data = $data;
+        $this->lead = $lead;
     }
 
     /**
@@ -64,14 +66,15 @@ class SendLeadCrm implements ShouldQueue
                 'code' => $e->getCode(),
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
-                '' => $e->getTrace()
-            ],'ERROR (EXCEPTION)');
+                'trace' => $e->getTrace()
+            ],'ERROR');
             return null;
         }
         if($response->successful()) {
             $this->logDebug('Auth Success', [
                 'header' => $response->headers(),
-                'body' => $response->object(),
+                'body' => $response->body(),
+                'bodyObject' => $response->object(),
                 'statusCode' => $response->status(),
                 'reason' => $response->reason(),
             ],'INFO');
@@ -79,12 +82,71 @@ class SendLeadCrm implements ShouldQueue
         }
 
         $this->logDebug('Auth Fail', [
-                'header' => $response->headers(),
-                'body' => $response->object(),
-                'statusCode' => $response->status(),
-                'reason' => $response->reason()
-            ],'ERROR (FAIL)');
+            'header' => $response->headers(),
+            'body' => $response->object(),
+            'statusCode' => $response->status(),
+            'reason' => $response->reason()
+        ],'WARNING');
         return null;
+    }
+
+    /**
+     * @param object|array|null $auth
+     * @param Lead $lead
+     * @return array|object|void
+     */
+    protected function sendLead(object|array|null $auth, Lead $lead)
+    {
+        $data = [
+            'name' => $lead->name,
+            'surname' => $lead->surname,
+            'master' => $lead->course,
+            'phone' => $lead->phone,
+            'email' => $lead->email,
+            'region' => $lead->region,
+            'city' => $lead->city,
+            'province' => $lead->province,
+        ];
+        try {
+            $response = Http::withToken($auth->access_token)
+                ->withHeaders([
+                    'User-Agent' => 'middleware3-abtg/1.0',
+                    'Accept' => 'application/json',
+                ])->post($this->getUrl($this->url), $data);
+        } catch (\Exception $e) {
+            $data = [
+                'code' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'trace' => $e->getTrace()
+            ];
+            $this->logDebug('Auth Exception', $data,'ERROR');
+            Lead::update(['response_crm' => json_encode($data)]);
+            exit();
+        }
+        if($response->successful()) {
+            $data = [
+                'data' => $data,
+                'header' => $response->headers(),
+                'body' => $response->body(),
+                'bodyObject' => $response->object(),
+                'statusCode' => $response->status(),
+                'reason' => $response->reason(),
+            ];
+            $this->logDebug('Send Lead Success', $data,'INFO');
+            Lead::update(['response_crm' => json_encode($data)]);
+            return $response->object();
+        }
+
+        $data = [
+            'data' => $data,
+            'header' => $response->headers(),
+            'body' => $response->object(),
+            'statusCode' => $response->status(),
+            'reason' => $response->reason()
+        ];
+        $this->logDebug('Auth Fail', $data,'WARNING');
+        Lead::update(['response_crm' => json_encode($data)]);
     }
 
     /**
@@ -94,23 +156,9 @@ class SendLeadCrm implements ShouldQueue
      */
     public function handle(): void
     {
-        $url = 'api/external/v1/organic/leads';
         $auth = $this->auth();
         if($auth) {
-            $response = Http::withToken($auth->access_token)
-                ->withHeaders([
-                    'User-Agent' => 'middleware3-abtg/1.0',
-                    'Accept' => 'application/json',
-                ])->post($this->getUrl($url), [
-                    'name' => $this->data['nome'],
-                    'surname' => $this->data['cognome'],
-                    'master' => $this->data['corso'],
-                    'phone' => $this->data['telefono'],
-                    'email' => $this->data['email'],
-                    'region' => $this->data['regione'],
-                    'city' => $this->data['city'],
-                    'province' => $this->data['provincia'],
-                ]);
+            $this->sendLead($auth, $this->lead);
         }
     }
 }

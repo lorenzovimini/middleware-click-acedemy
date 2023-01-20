@@ -61,7 +61,8 @@ class Lead extends Model
         'name',
         'surname',
         'region',
-        'state',
+        'city',
+        'province',
         'country',
         'phone',
         'email',
@@ -69,6 +70,8 @@ class Lead extends Model
         'accept970_at',
         'make_processed_at',
         'crm_processed_at',
-        'notes',
+        'request_webhook',
+        'response_crm',
+        'response_make'
     ];
 }

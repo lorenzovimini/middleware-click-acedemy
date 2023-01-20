@@ -24,10 +24,15 @@ trait WtLogTrait
      * @param string $fileName
      * @return void
      */
-    protected function logDebug(string $msg, ?array $data = [], string $type = 'DEBUG', string $fileName = 'app.log'): void
+    protected function logDebug(
+        string $msg,
+        ?array $data = [],
+        string $type = 'DEBUG',
+        string $fileName = 'app.log'
+    ): void
     {
-        if($this->debug) {
-            $this->wtLog($msg, $data, $fileName, $type);
+        if($this->debug || $type === 'ERROR') {
+            $this->wtLog($msg, $data, $type, $fileName);
         }
     }
 
@@ -38,7 +43,8 @@ trait WtLogTrait
      * @param string $fileName
      * @return void
      */
-    protected function wtLog(string $msg, ?array $data = [], string $type = 'LOG', string $fileName = 'app.log'): void
+    protected function wtLog(
+        string $msg, ?array $data = [], string $type = 'LOG', string $fileName = 'app.log'): void
     {
         $msg = date('d/m/Y H:i:s') . ' [' . $type . '] - ' . $msg;
         if($data && count($data) > 0) {

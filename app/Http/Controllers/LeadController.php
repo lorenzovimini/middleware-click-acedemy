@@ -10,11 +10,13 @@ use GuzzleHttp\Client;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class LeadController extends Controller
 {
     use WtLogTrait;
 
+    protected string $url = 'api/external/v1/organic/leads';
     protected bool $debug = true;
     protected string $code = 'Ca4aA-324de-24Lf4-gpMJ3';
     protected string $crmTestUlr = 'https://click-academy-api-81.octohub.it';
@@ -26,36 +28,53 @@ class LeadController extends Controller
         $this->client = new Client();
     }
 
+    public function sendWebHook()
+    {
+
+    }
+
     public function addLead(Request $request)
     {
-        \Log::log('info',json_encode($request->all()));
+        if($request->input('code') === $this->code){
+            $lead = $this->createLead($request);
+            $auth = $this->auth();
+            $this->sendLead($auth, $lead);
+            //SendLeadToMake::dispatch($data);
+
+        }
+        return abort(404);
+
+    }
+
+    protected function createLead(Request $request): Lead
+    {
         $content = $request->getContent();
         $data = json_decode($content, true);
         $dataLead = [
             'source' => $request->ip(),
             'referer' => $data['referer-page'],
-            'type' => $data['type'],
             'name' => $data['nome'],
             'surname' => $data['cognome'],
             'region' => $data['regione'],
-            'state' => $data['provincia'],
+            'province' => $data['provincia'],
+            'city' => $data['city'] ?? 'UNDEFINED',
             'country' => 'IT',
             'phone' => $data['telefono'],
             'email' => $data['email'],
             'course' => $data['corso'],
             'accept970_at' => Carbon::now()->toDateTimeString(),
+            'request_webhook' => json_encode([
+                'header' => $request->header(),
+                'data' => $request->all(),
+            ])
         ];
-        Lead::create($dataLead);
+        $lead = Lead::create($dataLead);
         $this->logDebug('Create lead', [
             'header' => $request->header(),
             'data' => $request->all(),
-            'lead' => $dataLead
+            'lead' => $lead->toArray()
         ],'INFO');
-
-
-        //$auth = $this->auth();
-        //SendLeadToMake::dispatch($data);
-        //SendLeadCrm::dispatch($data);
+        return $lead;
     }
 
     protected function getUrl(string $url): string
@@ -86,14 +105,15 @@ class LeadController extends Controller
                 'code' => $e->getCode(),
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
-                '' => $e->getTrace()
-            ],'ERROR (EXCEPTION)');
+                'trace' => $e->getTrace()
+            ],'ERROR');
             return null;
         }
         if($response->successful()) {
             $this->logDebug('Auth Success', [
                 'header' => $response->headers(),
-                'body' => $response->object(),
+                'body' => $response->body(),
+                'bodyObject' => $response->object(),
                 'statusCode' => $response->status(),
                 'reason' => $response->reason(),
             ],'INFO');
@@ -105,12 +125,75 @@ class LeadController extends Controller
             'body' => $response->object(),
             'statusCode' => $response->status(),
             'reason' => $response->reason()
-        ],'ERROR (FAIL)');
+        ],'WARNING');
         return null;
     }
 
-    protected function sendDataToCrm($data)
+    /**
+     * @param object|array|null $auth
+     * @param Lead $lead
+     * @return array|object|void
+     */
+    protected function sendLead(object|array|null $auth, Lead $lead)
     {
+        $data = [
+            'name' => $lead->name,
+            'surname' => $lead->surname,
+            'master' => $lead->course,
+            'phone' => $lead->phone,
+            'email' => $lead->email,
+            'region' => $lead->region,
+            'city' => $lead->city,
+            'province' => $lead->province,
+        ];
+        try {
+            $response = Http::withToken($auth->access_token)
+                ->withHeaders([
+                    'User-Agent' => 'middleware3-abtg/1.0',
+                    'Accept' => 'application/json',
+                ])->post($this->getUrl($this->url), $data);
+        } catch (\Exception $e) {
+            $data = [
+                'code' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'trace' => $e->getTrace()
+            ];
+            $this->logDebug('Auth Exception', $data,'ERROR');
+            Lead::update([
+                'response_processed' => Carbon::now()->toDateTimeString(),
+                'response_crm' => json_encode($data)
+            ]);
+            exit();
+        }
+        if($response->successful()) {
+            $data = [
+                'data' => $data,
+                'header' => $response->headers(),
+                'body' => $response->body(),
+                'bodyObject' => $response->object(),
+                'statusCode' => $response->status(),
+                'reason' => $response->reason(),
+            ];
+            $this->logDebug('Send Lead Success', $data,'INFO');
+            Lead::update([
+                'response_processed' => Carbon::now()->toDateTimeString(),
+                'response_crm' => json_encode($data)
+            ]);
+            return $response->object();
+        }
 
+        $data = [
+            'data' => $data,
+            'header' => $response->headers(),
+            'body' => $response->object(),
+            'statusCode' => $response->status(),
+            'reason' => $response->reason()
+        ];
+        $this->logDebug('Auth Fail', $data,'WARNING');
+        Lead::update([
+            'response_processed' => Carbon::now()->toDateTimeString(),
+            'response_crm' => json_encode($data)
+        ]);
     }
 }
