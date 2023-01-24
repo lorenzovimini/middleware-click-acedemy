@@ -3,20 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Support\WtLogTrait;
-use App\Jobs\SendLeadCrm;
-use App\Jobs\SendLeadToMake;
 use App\Models\Lead;
 use GuzzleHttp\Client;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 
 class LeadController extends Controller
 {
     use WtLogTrait;
 
-    protected string $url = 'api/external/v1/organic/leads';
+    protected string $url = 'api/external/v1/click-web/leads';
     protected bool $debug = true;
     protected string $code = 'Ca4aA-324de-24Lf4-gpMJ3';
     protected string $crmTestUlr = 'https://click-academy-api-81.octohub.it';
@@ -26,11 +23,6 @@ class LeadController extends Controller
     public function __construct()
     {
         $this->client = new Client();
-    }
-
-    public function sendWebHook()
-    {
-
     }
 
     public function addLead(Request $request)
@@ -139,7 +131,7 @@ class LeadController extends Controller
         $data = [
             'name' => $lead->name,
             'surname' => $lead->surname,
-            'master' => $lead->course,
+            'master' => 'ux-ui-design-graphic-design', //$lead->course,
             'phone' => $lead->phone,
             'email' => $lead->email,
             'region' => $lead->region,
@@ -190,10 +182,24 @@ class LeadController extends Controller
             'statusCode' => $response->status(),
             'reason' => $response->reason()
         ];
-        $this->logDebug('Auth Fail', $data,'WARNING');
+        $this->logDebug('Lead Fail', $data,'WARNING');
         Lead::update([
             'response_processed' => Carbon::now()->toDateTimeString(),
             'response_crm' => json_encode($data)
         ]);
+    }
+
+    protected function sendMake(Lead $lead)
+    {
+        $data = [
+            'name' => $lead->name,
+            'surname' => $lead->surname,
+            'master' => 'ux-ui-design-graphic-design', //$lead->course,
+            'phone' => $lead->phone,
+            'email' => $lead->email,
+            'region' => $lead->region,
+            'city' => $lead->city,
+            'province' => $lead->province,
+        ];
     }
 }
