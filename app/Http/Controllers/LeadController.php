@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Http;
 class LeadController extends Controller
 {
     use WtLogTrait;
-
+    public string $makeUlr = 'https://hook.eu1.make.com/7npu1raoyayosku4khn4q532kwgdq7y2?course_id=';
     protected string $url = 'api/external/v1/click-web/leads';
     protected bool $debug = true;
     protected string $code = 'Ca4aA-324de-24Lf4-gpMJ3';
@@ -25,19 +25,26 @@ class LeadController extends Controller
         $this->client = new Client();
     }
 
+    /**
+     * @param Request $request
+     * @return never
+     */
     public function addLead(Request $request)
     {
         if($request->input('code') === $this->code){
             $lead = $this->createLead($request);
             $auth = $this->auth();
             $this->sendLead($auth, $lead);
-            //SendLeadToMake::dispatch($data);
-
+            $this->sendMake($lead, $request->input('course_id')  ?? 1098);
         }
         return abort(404);
 
     }
 
+    /**
+     * @param Request $request
+     * @return Lead
+     */
     protected function createLead(Request $request): Lead
     {
         $content = $request->getContent();
@@ -54,6 +61,8 @@ class LeadController extends Controller
             'phone' => $data['telefono'],
             'email' => $data['email'],
             'course' => $data['corso'],
+            'courseSlug' => $data['slug_corso'] ?? null,
+            'course_id' => $data['course_id'] ?? null,
             'accept970_at' => Carbon::now()->toDateTimeString(),
             'request_webhook' => json_encode([
                 'header' => $request->header(),
@@ -69,6 +78,10 @@ class LeadController extends Controller
         return $lead;
     }
 
+    /**
+     * @param string $url
+     * @return string
+     */
     protected function getUrl(string $url): string
     {
         if($this->debug){
@@ -145,21 +158,21 @@ class LeadController extends Controller
                     'Accept' => 'application/json',
                 ])->post($this->getUrl($this->url), $data);
         } catch (\Exception $e) {
-            $data = [
+            $dataResponse = [
                 'code' => $e->getCode(),
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'trace' => $e->getTrace()
             ];
-            $this->logDebug('Auth Exception', $data,'ERROR');
-            Lead::update([
-                'response_processed' => Carbon::now()->toDateTimeString(),
-                'response_crm' => json_encode($data)
+            $this->logDebug('Lead Exception', $dataResponse,'ERROR');
+            $lead->update([
+                'crm_processed_at' => Carbon::now()->toDateTimeString(),
+                'response_crm' => json_encode($dataResponse)
             ]);
-            exit();
+            return abort(500);
         }
         if($response->successful()) {
-            $data = [
+            $dataResponse = [
                 'data' => $data,
                 'header' => $response->headers(),
                 'body' => $response->body(),
@@ -167,39 +180,97 @@ class LeadController extends Controller
                 'statusCode' => $response->status(),
                 'reason' => $response->reason(),
             ];
-            $this->logDebug('Send Lead Success', $data,'INFO');
-            Lead::update([
-                'response_processed' => Carbon::now()->toDateTimeString(),
-                'response_crm' => json_encode($data)
+            $this->logDebug('Send Lead Success', $dataResponse,'INFO');
+            $lead->update([
+                'crm_processed_at' => Carbon::now()->toDateTimeString(),
+                'response_crm' => json_encode($dataResponse)
             ]);
             return $response->object();
         }
 
-        $data = [
+        $dataResponse = [
             'data' => $data,
             'header' => $response->headers(),
             'body' => $response->object(),
             'statusCode' => $response->status(),
             'reason' => $response->reason()
         ];
-        $this->logDebug('Lead Fail', $data,'WARNING');
-        Lead::update([
-            'response_processed' => Carbon::now()->toDateTimeString(),
-            'response_crm' => json_encode($data)
+        $this->logDebug('Lead Fail', $dataResponse,'WARNING');
+        $lead->update([
+            'crm_processed_at' => Carbon::now()->toDateTimeString(),
+            'response_crm' => json_encode($dataResponse)
         ]);
     }
 
-    protected function sendMake(Lead $lead)
+    /**
+     * @param Lead $lead
+     * @param int $courseId
+     * @return array|never|object|void
+     */
+    protected function sendMake(Lead $lead, int $courseId)
     {
         $data = [
-            'name' => $lead->name,
-            'surname' => $lead->surname,
-            'master' => 'ux-ui-design-graphic-design', //$lead->course,
+            'referer-page' => $lead->referer,
+            'nome' => $lead->name,
+            'cognome' => $lead->surname,
+            'corso' => $lead->course,
             'phone' => $lead->phone,
             'email' => $lead->email,
-            'region' => $lead->region,
-            'city' => $lead->city,
-            'province' => $lead->province,
+            'regione' => $lead->region,
+            //'city' => $lead->city,
+            'provincia' => $lead->province,
+            'acceptance-970' => 1
         ];
+        try {
+            $response = Http::withHeaders([
+                    'User-Agent' => 'middleware3-abtg/1.0',
+                    'Accept' => 'application/json',
+                ])
+                ->withBody(json_encode($data), 'application/json')
+                ->post($this->makeUlr . $courseId);
+        } catch (\Exception $e) {
+            $dataResponse = [
+                'code' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'trace' => $e->getTrace()
+            ];
+            $this->logDebug('Make Exception', $dataResponse,'ERROR');
+            $lead->update([
+                'make_processed_at' => Carbon::now()->toDateTimeString(),
+                'response_make' => json_encode($dataResponse)
+            ]);
+            return abort(500);
+        }
+
+        if($response && $response->successful()) {
+            $dataResponse = [
+                'data' => $data,
+                'header' => $response->headers(),
+                'body' => $response->body(),
+                'bodyObject' => $response->object(),
+                'statusCode' => $response->status(),
+                'reason' => $response->reason(),
+            ];
+            $this->logDebug('Send Make Success', $dataResponse,'INFO');
+            $lead->update([
+                'make_processed_at' => Carbon::now()->toDateTimeString(),
+                'response_make' => json_encode($dataResponse)
+            ]);
+            return $response->object();
+        }
+
+        $dataResponse = [
+            'data' => $data,
+            'header' => $response->headers(),
+            'body' => $response->object(),
+            'statusCode' => $response->status(),
+            'reason' => $response->reason()
+        ];
+        $this->logDebug('Make Fail', $data,'WARNING');
+        $lead->update([
+            'make_processed_at' => Carbon::now()->toDateTimeString(),
+            'response_make' => json_encode($dataResponse)
+        ]);
     }
 }
