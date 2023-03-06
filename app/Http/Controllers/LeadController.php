@@ -12,12 +12,11 @@ use Illuminate\Support\Facades\Http;
 class LeadController extends Controller
 {
     use WtLogTrait;
+
     public string $makeUlr = 'https://hook.eu1.make.com/7npu1raoyayosku4khn4q532kwgdq7y2?course_id=';
-    protected string $url = 'api/external/v1/click-web/leads';
     protected bool $debug = true;
     protected string $code = 'Ca4aA-324de-24Lf4-gpMJ3';
-    protected string $crmTestUlr = 'https://click-academy-api-81.octohub.it';
-    protected string $crmUlr = 'https://crmapi81.appclickacademy.it';
+
     public Client $client;
 
     public function __construct()
@@ -32,6 +31,10 @@ class LeadController extends Controller
     public function addLead(Request $request)
     {
         if($request->input('code') === $this->code){
+            $this->logDebug('Request addLead', [
+                'header' => $request->header(),
+                'data' => $request->all()
+            ]);
             $lead = $this->createLead($request);
             $auth = $this->auth();
             $this->sendLead($auth, $lead);
@@ -79,31 +82,19 @@ class LeadController extends Controller
     }
 
     /**
-     * @param string $url
-     * @return string
-     */
-    protected function getUrl(string $url): string
-    {
-        if($this->debug){
-            return $this->crmTestUlr . '/' . $url;
-        }
-        return $this->crmUlr . '/' . $url;
-    }
-
-    /**
      * @return object|array|null
      */
     protected function auth(): object|array|null
     {
         try {
             $response = Http::withHeaders([
-                'User-Agent' => 'middleware3-abtg/1.0',
+                'User-Agent' => 'middleware-click-academy/1.0',
                 'Accept' => 'application/json',
-            ])->post($this->getUrl('api/external/v1/oauth/token'), [
+            ])->post(env('CRM_URL') . env('CRM_AUTH_PATH'), [
                 'grant_type' => 'client_credentials',
                 'scope' => '*',
-                'client_id' => '98433ce6-4d8e-458f-87a9-83a472667196',
-                'client_secret' => 'qVhNlyr0q49zAa5WuzkY28cu3dec7yOnFyowMaN4'
+                'client_id' => env('CRM_CLIENT_ID'),
+                'client_secret' => env('CRM_CLIENT_SECRET')
             ]);
         } catch (\Exception $e){
             $this->logDebug('Auth Exception', [
@@ -154,9 +145,9 @@ class LeadController extends Controller
         try {
             $response = Http::withToken($auth->access_token)
                 ->withHeaders([
-                    'User-Agent' => 'middleware3-abtg/1.0',
+                    'User-Agent' => 'middleware-click-academy/1.0',
                     'Accept' => 'application/json',
-                ])->post($this->getUrl($this->url), $data);
+                ])->post(env('CRM_URL') . env('CRM_LEAD_PATH'), $data);
         } catch (\Exception $e) {
             $dataResponse = [
                 'code' => $e->getCode(),
@@ -223,7 +214,7 @@ class LeadController extends Controller
         ];
         try {
             $response = Http::withHeaders([
-                    'User-Agent' => 'middleware3-abtg/1.0',
+                    'User-Agent' => 'middleware-abtg/1.0',
                     'Accept' => 'application/json',
                 ])
                 ->withBody(json_encode($data), 'application/json')
