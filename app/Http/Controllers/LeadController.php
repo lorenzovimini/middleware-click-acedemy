@@ -24,6 +24,23 @@ class LeadController extends Controller
         $this->client = new Client();
     }
 
+    public function test()
+    {
+        $stringUrl = 'https://www.click-academy.it/wp-admin/edit.php?post_type=page&paged=4&utm=facebook';
+        return $this->listParams($stringUrl);
+    }
+
+    protected function listParams($stringUrl){
+        $stringParams = substr($stringUrl, strpos($stringUrl, '?') + 1);
+        $params = explode('&', $stringParams);
+        $listParams = [];
+        foreach ($params as $param){
+            $paramArr = explode('=', $param);
+            $listParams[$paramArr[0]] = $paramArr[1];
+        }
+        return $listParams;
+    }
+
     /**
      * @param Request $request
      * @return never
@@ -36,12 +53,11 @@ class LeadController extends Controller
                 'data' => $request->all()
             ]);
             $lead = $this->createLead($request);
-            $auth = $this->auth();
+            $auth = $this->auth($lead);
             $this->sendLead($auth, $lead);
             $this->sendMake($lead, $request->input('course_id')  ?? 1098);
         }
         return abort(404);
-
     }
 
     /**
@@ -53,8 +69,9 @@ class LeadController extends Controller
         $content = $request->getContent();
         $data = json_decode($content, true);
         $dataLead = [
-            'source' => $request->ip(),
+            'source_ip' => $request->ip(),
             'referer' => $data['referer-page'],
+            'source' => $data['source'] ?? null,
             'name' => $data['nome'],
             'surname' => $data['cognome'],
             'region' => $data['regione'],
@@ -82,19 +99,43 @@ class LeadController extends Controller
     }
 
     /**
+     * @param Lead $lead
      * @return object|array|null
      */
-    protected function auth(): object|array|null
+    protected function auth(Lead $lead): object|array|null
     {
+        switch($lead->source){
+            case 'instagram':
+                $clientId = env('CRM_CLIENT_ID_INSTAGRAM');
+                $clientSecret = env('CRM_SECRET_INSTAGRAM');
+                break;
+            case 'google':
+                $clientId = env('CRM_CLIENT_ID_GOOGLE');
+                $clientSecret = env('CRM_SECRET_GOOGLE');
+                break;
+            case 'facebook':
+                $clientId = env('CRM_CLIENT_ID_FACEBOOK');
+                $clientSecret = env('CRM_SECRET_FACEBOOK');
+                break;
+            case 'tiktok':
+                $clientId = env('CRM_CLIENT_ID_TIKTOK');
+                $clientSecret = env('CRM_SECRET_TIKTOK');
+                break;
+            default:
+                $clientId = env('CRM_CLIENT_ID');
+                $clientSecret = env('CRM_SECRET');
+                break;
+        }
         try {
-            $response = Http::withHeaders([
+            $response = Http:: withHeaders([
                 'User-Agent' => 'middleware-click-academy/1.0',
                 'Accept' => 'application/json',
-            ])->post(env('CRM_URL') . env('CRM_AUTH_PATH'), [
+            ])->withOptions(['verify'=>false])
+                ->post(env('CRM_URL') . env('CRM_AUTH_PATH'), [
                 'grant_type' => 'client_credentials',
                 'scope' => '*',
-                'client_id' => env('CRM_CLIENT_ID'),
-                'client_secret' => env('CRM_CLIENT_SECRET')
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret
             ]);
         } catch (\Exception $e){
             $this->logDebug('Auth Exception', [
@@ -135,7 +176,7 @@ class LeadController extends Controller
         $data = [
             'name' => $lead->name,
             'surname' => $lead->surname,
-            'master' => 'ux-ui-design-graphic-design', //$lead->course,
+            'master' => $lead->course ?? 'ux-ui-design-graphic-design',
             'phone' => $lead->phone,
             'email' => $lead->email,
             'region' => $lead->region,
@@ -147,7 +188,8 @@ class LeadController extends Controller
                 ->withHeaders([
                     'User-Agent' => 'middleware-click-academy/1.0',
                     'Accept' => 'application/json',
-                ])->post(env('CRM_URL') . env('CRM_LEAD_PATH'), $data);
+                ])->withOptions(['verify'=>false])
+                ->post(env('CRM_URL') . env('CRM_LEAD_PATH'), $data);
         } catch (\Exception $e) {
             $dataResponse = [
                 'code' => $e->getCode(),

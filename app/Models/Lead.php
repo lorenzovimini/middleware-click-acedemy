@@ -54,10 +54,10 @@ class Lead extends Model
     use HasFactory;
 
     protected $fillable = [
-        'source',
+        'source_ip',
         'referer',
         'email',
-        'type',
+        'source',
         'name',
         'surname',
         'region',
